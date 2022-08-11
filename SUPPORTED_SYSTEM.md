@@ -17,8 +17,9 @@
 | **Windows Vista**       | YES                             |          NO               |
 | **Windows Server 2008** | YES                             |          NO               |
 | **Windows 7**           | YES                             |          NO               |
-| **Windows 8**           | YES                             |          YES              |
+| **Windows 8**           | YES                             |          No               |
 | **Windows 8.1**         | YES                             |          YES              |
 | **Windows 10**          | YES                             |          YES              |
+| **Windows 11**          | YES                             |          YES              |
 
 *Note that the list is meant for the last SP of each version*

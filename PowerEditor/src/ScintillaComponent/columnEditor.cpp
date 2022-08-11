@@ -17,8 +17,6 @@
 
 #include <vector>
 #include <algorithm>
-#include <shlobj.h>
-#include <uxtheme.h>
 #include "columnEditor.h"
 #include "ScintillaEditView.h"
 
@@ -38,25 +36,88 @@ void ColumnEditorDlg::display(bool toShow) const
         ::SetFocus(::GetDlgItem(_hSelf, ID_GOLINE_EDIT));
 }
 
-INT_PTR CALLBACK ColumnEditorDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM)
+intptr_t CALLBACK ColumnEditorDlg::run_dlgProc(UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message) 
 	{
 		case WM_INITDIALOG :
 		{
+			NppDarkMode::autoSubclassAndThemeChildControls(_hSelf);
+
 			switchTo(activeText);
 			::SendDlgItemMessage(_hSelf, IDC_COL_DEC_RADIO, BM_SETCHECK, TRUE, 0);
 			goToCenter();
 
-			NppParameters& nppParam = NppParameters::getInstance();
-			ETDTProc enableDlgTheme = (ETDTProc)nppParam.getEnableThemeDlgTexture();
-			if (enableDlgTheme)
-			{
-				enableDlgTheme(_hSelf, ETDT_ENABLETAB);
-				redraw();
-			}
 			return TRUE;
 		}
+
+		case WM_CTLCOLOREDIT:
+		{
+			if (NppDarkMode::isEnabled())
+			{
+				return NppDarkMode::onCtlColorSofter(reinterpret_cast<HDC>(wParam));
+			}
+			break;
+		}
+
+		case WM_CTLCOLORDLG:
+		{
+			if (NppDarkMode::isEnabled())
+			{
+				return NppDarkMode::onCtlColorDarker(reinterpret_cast<HDC>(wParam));
+			}
+			break;
+		}
+
+		case WM_CTLCOLORSTATIC:
+		{
+			auto hdcStatic = reinterpret_cast<HDC>(wParam);
+			auto dlgCtrlID = ::GetDlgCtrlID(reinterpret_cast<HWND>(lParam));
+
+			bool isStaticText = (dlgCtrlID == IDC_COL_INITNUM_STATIC ||
+				dlgCtrlID == IDC_COL_INCRNUM_STATIC ||
+				dlgCtrlID == IDC_COL_REPEATNUM_STATIC);
+			//set the static text colors to show enable/disable instead of ::EnableWindow which causes blurry text
+			if (isStaticText)
+			{
+				bool isTextEnabled = isCheckedOrNot(IDC_COL_NUM_RADIO);
+				return NppDarkMode::onCtlColorDarkerBGStaticText(hdcStatic, isTextEnabled);
+			}
+
+			if (NppDarkMode::isEnabled())
+			{
+				return NppDarkMode::onCtlColorDarker(hdcStatic);
+			}
+			return FALSE;
+		}
+
+		case WM_PRINTCLIENT:
+		{
+			if (NppDarkMode::isEnabled())
+			{
+				return TRUE;
+			}
+			break;
+		}
+
+		case WM_ERASEBKGND:
+		{
+			if (NppDarkMode::isEnabled())
+			{
+				RECT rc = {};
+				getClientRect(rc);
+				::FillRect(reinterpret_cast<HDC>(wParam), &rc, NppDarkMode::getDarkerBackgroundBrush());
+				return TRUE;
+			}
+			break;
+		}
+
+		case NPPM_INTERNAL_REFRESHDARKMODE:
+		{
+			NppDarkMode::autoThemeChildControls(_hSelf);
+			return TRUE;
+		}
+
 		case WM_COMMAND : 
 		{
 			switch (wParam)
@@ -130,7 +191,7 @@ INT_PTR CALLBACK ColumnEditorDlg::run_dlgProc(UINT message, WPARAM wParam, LPARA
 										
 									s2r.insert(posRelative2Start, str);
 								}
-								(*_ppEditView)->replaceTarget(s2r.c_str(), int(lineBegin), int(lineEnd));
+								(*_ppEditView)->replaceTarget(s2r.c_str(), lineBegin, lineEnd);
 							}
 							delete [] line;
 						}
@@ -282,7 +343,7 @@ INT_PTR CALLBACK ColumnEditorDlg::run_dlgProc(UINT message, WPARAM wParam, LPARA
 		default :
 			return FALSE;
 	}
-	//return FALSE;
+	return FALSE;
 }
 
 void ColumnEditorDlg::switchTo(bool toText)
@@ -293,13 +354,9 @@ void ColumnEditorDlg::switchTo(bool toText)
 
 	HWND hNum = ::GetDlgItem(_hSelf, IDC_COL_INITNUM_EDIT);
 	::SendDlgItemMessage(_hSelf, IDC_COL_NUM_RADIO, BM_SETCHECK, !toText, 0);
-	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_INITNUM_STATIC), !toText);
 	::EnableWindow(hNum, !toText);
-	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_INCRNUM_STATIC), !toText);
 	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_INCREASENUM_EDIT), !toText);
-	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_REPEATNUM_STATIC), !toText);
 	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_REPEATNUM_EDIT), !toText);
-	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_FORMAT_GRP_STATIC), !toText);
 	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_DEC_RADIO), !toText);
 	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_HEX_RADIO), !toText);
 	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_OCT_RADIO), !toText);
@@ -307,6 +364,8 @@ void ColumnEditorDlg::switchTo(bool toText)
 	::EnableWindow(::GetDlgItem(_hSelf, IDC_COL_LEADZERO_CHECK), !toText);
 
 	::SetFocus(toText?hText:hNum);
+
+	redraw();
 }
 
 UCHAR ColumnEditorDlg::getFormat() 
@@ -321,4 +380,3 @@ UCHAR ColumnEditorDlg::getFormat()
 		f = 3;
 	return (f | (isLeadingZeros?MASK_ZERO_LEADING:0));
 }
-

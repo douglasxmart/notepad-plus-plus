@@ -64,15 +64,7 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 				_pEditView->getCurrentBuffer()->setModifiedStatus(true);
 			}
 
-			if (notification->modificationType & SC_MOD_CHANGEFOLD)
-			{
-				if (prevWasEdit)
-				{
-					notifyView->foldChanged(notification->line, notification->foldLevelNow, notification->foldLevelPrev);
-					prevWasEdit = false;
-				}
-			}
-			else if (!(notification->modificationType & (SC_MOD_DELETETEXT | SC_MOD_INSERTTEXT)))
+			if ((notification->modificationType & SC_MOD_CHANGEFOLD) || !(notification->modificationType & (SC_MOD_DELETETEXT | SC_MOD_INSERTTEXT)))
 			{
 				prevWasEdit = false;
 			}
@@ -127,6 +119,13 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 				if (!canUndo && buf->isLoadedDirty() && buf->isDirty())
 					isDirty = true;
 			}
+
+			if (buf->isUnsync()) // buffer in Notepad++ is not syncronized with the file on disk - in this case the buffer is always dirty 
+				isDirty = true;
+
+			if (buf->isSavePointDirty())
+				isDirty = true;
+
 			buf->setDirty(isDirty);
 			break;
 		}
@@ -441,6 +440,13 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 						return TRUE;
 					TrackPopupMenu(hEolFormatMenu, 0, p.x, p.y, 0, _pPublicInterface->getHSelf(), NULL);
 				}
+				else if (lpnm->dwItemSpec == DWORD(STATUSBAR_UNICODE_TYPE))
+				{
+					POINT p;
+					::GetCursorPos(&p);
+					HMENU hLangMenu = ::GetSubMenu(_mainMenuHandle, MENUINDEX_FORMAT);
+					TrackPopupMenu(hLangMenu, 0, p.x, p.y, 0, _pPublicInterface->getHSelf(), NULL);
+				}
 			}
 			break;
 		}
@@ -477,22 +483,37 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 						return TRUE;
 					TrackPopupMenu(hEolFormatMenu, 0, p.x, p.y, 0, _pPublicInterface->getHSelf(), NULL);
 				}
+				else if (lpnm->dwItemSpec == DWORD(STATUSBAR_UNICODE_TYPE))
+				{
+					POINT p;
+					::GetCursorPos(&p);
+					HMENU hLangMenu = ::GetSubMenu(_mainMenuHandle, MENUINDEX_FORMAT);
+					TrackPopupMenu(hLangMenu, 0, p.x, p.y, 0, _pPublicInterface->getHSelf(), NULL);
+				}
 				return TRUE;
 			}
-			else if (_pFileSwitcherPanel && notification->nmhdr.hwndFrom == _pFileSwitcherPanel->getHSelf())
+			else if (_pDocumentListPanel && notification->nmhdr.hwndFrom == _pDocumentListPanel->getHSelf())
 			{
 				// Already switched, so do nothing here.
 
-				if (_pFileSwitcherPanel->nbSelectedFiles() > 1)
+				if (_pDocumentListPanel->nbSelectedFiles() > 1)
 				{
 					if (!_fileSwitcherMultiFilePopupMenu.isCreated())
 					{
 						vector<MenuItemUnit> itemUnitArray;
-						itemUnitArray.push_back(MenuItemUnit(IDM_FILESWITCHER_FILESCLOSE, TEXT("Close Selected files")));
-						itemUnitArray.push_back(MenuItemUnit(IDM_FILESWITCHER_FILESCLOSEOTHERS, TEXT("Close others files")));
+						itemUnitArray.push_back(MenuItemUnit(IDM_DOCLIST_FILESCLOSE, TEXT("Close Selected files")));
+						itemUnitArray.push_back(MenuItemUnit(IDM_DOCLIST_FILESCLOSEOTHERS, TEXT("Close Other files")));
+						itemUnitArray.push_back(MenuItemUnit(IDM_DOCLIST_COPYNAMES, TEXT("Copy Selected Names")));
+						itemUnitArray.push_back(MenuItemUnit(IDM_DOCLIST_COPYPATHS, TEXT("Copy Selected Pathnames")));
+
+						for (auto&& x : itemUnitArray)
+						{
+							const generic_string menuItem = _nativeLangSpeaker.getNativeLangMenuString(x._cmdID);
+							if (!menuItem.empty())
+								x._itemName = menuItem;
+						}
 
 						_fileSwitcherMultiFilePopupMenu.create(_pPublicInterface->getHSelf(), itemUnitArray);
-						_nativeLangSpeaker.changeLangTabContextMenu(_fileSwitcherMultiFilePopupMenu.getMenuHandle());
 					}
 					_fileSwitcherMultiFilePopupMenu.display(p);
 					return TRUE;
@@ -577,7 +598,7 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 			else if (notification->nmhdr.hwndFrom == _subEditView.getHSelf())
 				switchEditViewTo(SUB_VIEW);
 
-			int lineClick = int(_pEditView->execute(SCI_LINEFROMPOSITION, notification->position));
+			intptr_t lineClick = _pEditView->execute(SCI_LINEFROMPOSITION, notification->position);
 
 			if (notification->margin == ScintillaEditView::_SC_MARGE_FOLDER)
 			{
@@ -648,11 +669,15 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 				if (indentMaintain)
 					maintainIndentation(static_cast<TCHAR>(notification->ch));
 
-				AutoCompletion * autoC = isFromPrimary ? &_autoCompleteMain : &_autoCompleteSub;
-				bool isColumnMode = _pEditView->execute(SCI_GETSELECTIONS) > 1; // Multi-Selection || Column mode)
-				if (nppGui._matchedPairConf.hasAnyPairsPair() && !isColumnMode)
-					autoC->insertMatchedChars(notification->ch, nppGui._matchedPairConf);
-				autoC->update(notification->ch);
+				Buffer* currentBuf = _pEditView->getCurrentBuffer();
+				if (!currentBuf->isLargeFile())
+				{
+					AutoCompletion* autoC = isFromPrimary ? &_autoCompleteMain : &_autoCompleteSub;
+					bool isColumnMode = _pEditView->execute(SCI_GETSELECTIONS) > 1; // Multi-Selection || Column mode)
+					if (nppGui._matchedPairConf.hasAnyPairsPair() && !isColumnMode)
+						autoC->insertMatchedChars(notification->ch, nppGui._matchedPairConf);
+					autoC->update(notification->ch);
+				}
 			}
 			break;
 		}
@@ -851,9 +876,10 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 			if (nppParam._isFindReplacing)
 				break;
 
-			if (notification->nmhdr.hwndFrom != _pEditView->getHSelf()) // notification come from unfocus view - both views ae visible
+			Buffer* currentBuf = _pEditView->getCurrentBuffer();
+
+			if (notification->nmhdr.hwndFrom != _pEditView->getHSelf() && !currentBuf->isLargeFile()) // notification come from unfocus view - both views ae visible
 			{
-				//ScintillaEditView * unfocusView = isFromPrimary ? &_subEditView : &_mainEditView;
 				if (nppGui._smartHiliteOnAnotherView)
 				{
 					TCHAR selectedText[1024];
@@ -865,13 +891,13 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 
 			braceMatch();
 
-			if (nppGui._enableTagsMatchHilite)
+			if (nppGui._enableTagsMatchHilite && !currentBuf->isLargeFile())
 			{
 				XmlMatchedTagsHighlighter xmlTagMatchHiliter(_pEditView);
 				xmlTagMatchHiliter.tagMatch(nppGui._enableTagAttrsHilite);
 			}
 
-			if (nppGui._enableSmartHilite)
+			if (nppGui._enableSmartHilite && !currentBuf->isLargeFile())
 			{
 				if (nppGui._disableSmartHiliteTmp)
 					nppGui._disableSmartHiliteTmp = false;
@@ -892,7 +918,7 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 
 			if (_pFuncList && (!_pFuncList->isClosed()) && _pFuncList->isVisible())
 				_pFuncList->markEntry();
-			AutoCompletion * autoC = isFromPrimary?&_autoCompleteMain:&_autoCompleteSub;
+			AutoCompletion * autoC = isFromPrimary ? &_autoCompleteMain : &_autoCompleteSub;
 			autoC->update(0);
 
 			break;
@@ -907,8 +933,8 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 
 				POINT p;
 				::GetCursorPos(&p);
-				::ScreenToClient(_pPublicInterface->getHSelf(), &p);
-				HWND hWin = ::RealChildWindowFromPoint(_pPublicInterface->getHSelf(), p);
+				::MapWindowPoints(NULL, _pPublicInterface->getHSelf(), &p, 1);
+				HWND hWin = ::ChildWindowFromPointEx(_pPublicInterface->getHSelf(), p, CWP_SKIPINVISIBLE);
 				const int tipMaxLen = 1024;
 				static TCHAR docTip[tipMaxLen];
 				docTip[0] = '\0';
@@ -929,6 +955,9 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 				{
 					BufferID idd = _mainDocTab.getBufferByIndex(id);
 					Buffer * buf = MainFileManager.getBufferByID(idd);
+					if (buf == nullptr)
+						return FALSE;
+
 					tipTmp = buf->getFullPathName();
 
 					if (tipTmp.length() >= tipMaxLen)
@@ -941,6 +970,9 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 				{
 					BufferID idd = _subDocTab.getBufferByIndex(id);
 					Buffer * buf = MainFileManager.getBufferByID(idd);
+					if (buf == nullptr)
+						return FALSE;
+
 					tipTmp = buf->getFullPathName();
 
 					if (tipTmp.length() >= tipMaxLen)
@@ -1036,8 +1068,32 @@ BOOL Notepad_plus::notify(SCNotification *notification)
 
 		case SCN_CALLTIPCLICK:
 		{
-			AutoCompletion * autoC = isFromPrimary?&_autoCompleteMain:&_autoCompleteSub;
+			AutoCompletion * autoC = isFromPrimary ? &_autoCompleteMain : &_autoCompleteSub;
 			autoC->callTipClick(notification->position);
+			break;
+		}
+
+		case SCN_AUTOCSELECTION:
+		{
+			const NppGUI& nppGui = NppParameters::getInstance().getNppGUI();
+
+			// if autocompletion is disabled and it is triggered manually, then both ENTER & TAB will insert the selection 
+			if (nppGui._autocStatus == NppGUI::AutocStatus::autoc_none)
+			{
+				break;
+			}
+
+			if (notification->listCompletionMethod == SC_AC_NEWLINE && !nppGui._autocInsertSelectedUseENTER)
+			{
+				notifyView->execute(SCI_AUTOCCANCEL);
+				notifyView->execute(SCI_NEWLINE);
+			}
+
+			if (notification->listCompletionMethod == SC_AC_TAB && !nppGui._autocInsertSelectedUseTAB)
+			{
+				notifyView->execute(SCI_AUTOCCANCEL);
+				notifyView->execute(SCI_TAB);
+			}
 			break;
 		}
 

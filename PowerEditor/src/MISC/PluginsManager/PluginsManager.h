@@ -23,12 +23,13 @@
 #include "IDAllocator.h"
 
 typedef BOOL (__cdecl * PFUNCISUNICODE)();
+class PluginViewList;
 
 struct PluginCommand
 {
 	generic_string _pluginName;
-	int _funcID;
-	PFUNCPLUGINCMD _pFunc;
+	int _funcID = 0;
+	PFUNCPLUGINCMD _pFunc = nullptr;
 	PluginCommand(const TCHAR *pluginName, int funcID, PFUNCPLUGINCMD pFunc): _funcID(funcID), _pFunc(pFunc), _pluginName(pluginName){};
 };
 
@@ -64,8 +65,13 @@ struct LoadedDllInfo
 {
 	generic_string _fullFilePath;
 	generic_string _fileName;
+	generic_string _displayName;
 
-	LoadedDllInfo(const generic_string & fullFilePath, const generic_string & fileName) : _fullFilePath(fullFilePath), _fileName(fileName) {};
+	LoadedDllInfo(const generic_string & fullFilePath, const generic_string & fileName) : _fullFilePath(fullFilePath), _fileName(fileName)
+	{
+		// the plugin module's name, without '.dll'
+		_displayName = fileName.substr(0, fileName.find_last_of('.'));
+	};
 };
 
 class PluginsManager
@@ -78,9 +84,6 @@ public:
 	{
 		for (size_t i = 0, len = _pluginInfos.size(); i < len; ++i)
 			delete _pluginInfos[i];
-
-		if (_hPluginsMenu)
-			DestroyMenu(_hPluginsMenu);
 	}
 
 	void init(const NppData & nppData)
@@ -88,8 +91,7 @@ public:
 		_nppData = nppData;
 	}
 
-    int loadPlugin(const TCHAR *pluginFilePath);
-	bool loadPluginsV2(const TCHAR *dir = NULL);
+	bool loadPlugins(const TCHAR *dir = NULL, const PluginViewList* pluginUpdateInfoList = nullptr);
 
     bool unloadPlugin(int index, HWND nppHandle);
 
@@ -97,7 +99,7 @@ public:
 	void runPluginCommand(const TCHAR *pluginName, int commandID);
 
     void addInMenuFromPMIndex(int i);
-	HMENU setMenu(HMENU hMenu, const TCHAR *menuName, bool enablePluginAdmin = false);
+	HMENU initMenu(HMENU hMenu, bool enablePluginAdmin = false);
 	bool getShortcutByCmdID(int cmdID, ShortcutKey *sk);
 	bool removeShortcutByCmdID(int cmdID);
 
@@ -129,6 +131,8 @@ private:
 	IDAllocator _markerAlloc;
 	bool _noMoreNotification = false;
 
+	int loadPluginFromPath(const TCHAR* pluginFilePath);
+
 	void pluginCrashAlert(const TCHAR *pluginName, const TCHAR *funcSignature)
 	{
 		generic_string msg = pluginName;
@@ -159,10 +163,3 @@ private:
 		_loadedDlls.push_back(LoadedDllInfo(fullPath, fn));
 	}
 };
-
-#define EXT_LEXER_DECL __stdcall
-
-// External Lexer function definitions...
-typedef int (EXT_LEXER_DECL *GetLexerCountFn)();
-typedef void (EXT_LEXER_DECL *GetLexerNameFn)(unsigned int Index, char *name, int buflength);
-typedef void (EXT_LEXER_DECL *GetLexerStatusTextFn)(unsigned int Index, TCHAR *desc, int buflength);

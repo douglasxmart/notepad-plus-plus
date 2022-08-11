@@ -63,6 +63,10 @@ struct _gridhandlestruct
 		COLORREF highlightcolorProtectNoFocus;
 		COLORREF gridlinecolor;
         COLORREF highlighttextcolor;
+        COLORREF backgroundcolor;
+        COLORREF titletextcolor;
+        COLORREF titlecolor;
+        COLORREF titlegridlinecolor;
 		BOOL DRAWHIGHLIGHT;
         BOOL ADVANCEROW;
         BOOL CURRENTCELLPROTECTED;
@@ -376,7 +380,7 @@ void DisplayColumn(HWND hWnd,int SI,int c,int offset,HFONT hfont,HFONT hcolumnhe
 
 
     holdfont = (HFONT)SelectObject(gdc,hcolumnheadingfont);
-	SetTextColor(gdc,BGHS[SI].textcolor);
+	SetTextColor(gdc,BGHS[SI].titletextcolor);
 	//display header row
 	r=0;
 
@@ -437,7 +441,18 @@ void DisplayColumn(HWND hWnd,int SI,int c,int offset,HFONT hfont,HFONT hcolumnhe
 		 SendMessage(hWnd, BGM_GETCELLDATA, reinterpret_cast<WPARAM>(&BGcell), reinterpret_cast<LPARAM>(buffer));
 
 	 rectsave=rect;
-	 DrawEdge(gdc,&rect,EDGE_ETCHED,BF_MIDDLE|BF_RECT|BF_ADJUST);
+	 //DrawEdge(gdc,&rect,EDGE_ETCHED,BF_MIDDLE|BF_RECT|BF_ADJUST);
+     HBRUSH hbrushtitle, holdbrushtitle;
+     HPEN hpentitle, holdpentitle;
+     hbrushtitle = CreateSolidBrush(BGHS[SI].titlecolor);
+     hpentitle = CreatePen(PS_SOLID, 1, BGHS[SI].titlegridlinecolor);
+     holdbrushtitle = (HBRUSH)SelectObject(gdc, hbrushtitle);
+     holdpentitle = (HPEN)SelectObject(gdc, hpentitle);
+     Rectangle(gdc, rect.left, rect.top, rect.right, rect.bottom);
+     SelectObject(gdc, holdbrushtitle);
+     SelectObject(gdc, holdpentitle);
+     DeleteObject(hbrushtitle);
+     DeleteObject(hpentitle);
 	 DrawTextEx(gdc,buffer,-1,&rect,DT_END_ELLIPSIS|DT_CENTER|DT_WORDBREAK|DT_NOPREFIX,NULL);
 	 rect=rectsave;
 
@@ -456,12 +471,12 @@ void DisplayColumn(HWND hWnd,int SI,int c,int offset,HFONT hfont,HFONT hcolumnhe
                       }
                   else
                       {
-                       SetTextColor(gdc,RGB(0,0,0));//set black text for nonfocus grid hilight
+                       SetTextColor(gdc,BGHS[SI].textcolor);//set black text for nonfocus grid hilight
                       }
                  }
              else
                  {
-                  SetTextColor(gdc,RGB(0,0,0));
+                  SetTextColor(gdc,BGHS[SI].textcolor);
                  }
 
 		 rect.top = rect.bottom;
@@ -481,8 +496,19 @@ void DisplayColumn(HWND hWnd,int SI,int c,int offset,HFONT hfont,HFONT hcolumnhe
 
 		 if(c==0)
 		 {
-		  DrawEdge(gdc,&rect,EDGE_ETCHED,BF_MIDDLE|BF_RECT|BF_ADJUST);
-
+			 //DrawEdge(gdc,&rect,EDGE_ETCHED,BF_MIDDLE|BF_RECT|BF_ADJUST);
+			 SetTextColor(gdc, BGHS[SI].titletextcolor);
+			 HBRUSH hbrush, holdbrush;
+			 HPEN hpen, holdpen;
+			 hbrush = CreateSolidBrush(BGHS[SI].titlecolor);
+			 hpen = CreatePen(PS_SOLID, 1, BGHS[SI].titlegridlinecolor);
+			 holdbrush = (HBRUSH)SelectObject(gdc, hbrush);
+			 holdpen = (HPEN)SelectObject(gdc, hpen);
+			 Rectangle(gdc, rect.left, rect.top, rect.right, rect.bottom);
+			 SelectObject(gdc, holdbrush);
+			 SelectObject(gdc, holdpen);
+			 DeleteObject(hbrush);
+			 DeleteObject(hpen);
 		 }
 		 else
 		 {
@@ -626,20 +652,22 @@ void DisplayColumn(HWND hWnd,int SI,int c,int offset,HFONT hfont,HFONT hcolumnhe
              {
               //repaint bottom of grid
 		         RECT trect;
-                 HBRUSH holdbrush;
+                 HBRUSH holdbrush, hbrush;
                  HPEN holdpen;
 		         GetClientRect(hWnd,&trect);
                  trect.top = rect.bottom;
                  trect.left = rect.left;
                  trect.right = rect.right;
 
-                 holdbrush=(HBRUSH)SelectObject(gdc,GetStockObject(GRAY_BRUSH));
+                 hbrush = CreateSolidBrush(BGHS[SI].backgroundcolor);
+                 holdbrush=(HBRUSH)SelectObject(gdc, hbrush);
                  holdpen=(HPEN)SelectObject(gdc,GetStockObject(NULL_PEN));
 
                  Rectangle(gdc,trect.left,trect.top,trect.right+1,trect.bottom+1);
 
 		         SelectObject(gdc,holdbrush);
                  SelectObject(gdc,holdpen);
+                 DeleteObject(hbrush);
 
              }
 
@@ -1251,6 +1279,10 @@ ATOM RegisterGridClass(HINSTANCE hInstance)
 		BGHS[j].gridlinecolor = RGB(220,220,220);
         BGHS[j].highlighttextcolor = RGB(255,255,255);
 		BGHS[j].textcolor = RGB(0,0,0);
+        BGHS[j].backgroundcolor = GetSysColor(COLOR_BTNFACE);
+        BGHS[j].titletextcolor = RGB(0,0,0);
+        BGHS[j].titlecolor = GetSysColor(COLOR_BTNFACE);
+        BGHS[j].titlegridlinecolor = RGB(120,120,120);
         BGHS[j].titleheight = 0;
         BGHS[j].EXTENDLASTCOLUMN = TRUE;
         BGHS[j].SHOWINTEGRALROWS = TRUE;
@@ -1559,7 +1591,7 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
               {
                    //it was found, get the text, modify text delete it from list, add modified to list
 				  auto lbTextLen = ::SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXTLEN, FindResult, 0);
-				  if (lbTextLen > bufferLen)
+				  if (static_cast<size_t>(lbTextLen) > bufferLen)
 					  return TRUE;
 
 					SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXT, FindResult, reinterpret_cast<LPARAM>(buffer));
@@ -1687,7 +1719,7 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     if(j>0)
                         {
 						auto lbTextLen = ::SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXTLEN, j-1, 0);
-						if (lbTextLen > bufferLen)
+						if (static_cast<size_t>(lbTextLen) > bufferLen)
 							return TRUE;
 							SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXT, j - 1, reinterpret_cast<LPARAM>(buffer));
                          buffer[5]=0x00;
@@ -1732,7 +1764,7 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                        //count lines
                            {
                                int count=1;
-                               TCHAR tbuffer[255];
+                               TCHAR tbuffer[255] = { '\0' };
 							   wcscpy_s(tbuffer,(TCHAR*)lParam);
                                for(int j=0;j<(int)lstrlen(tbuffer);j++)
                                    {
@@ -1790,7 +1822,7 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                   {
                    //it was found, get it
 				  auto lbTextLen = ::SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXTLEN, FindResult, 0);
-				  if (lbTextLen > bufferLen)
+				  if (static_cast<size_t>(lbTextLen) > bufferLen)
 					  return TRUE;
 					  SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXT, FindResult, reinterpret_cast<LPARAM>(buffer));
 				   switch (buffer[10]) // no need to call BGM_GETPROTECTION separately for this
@@ -1949,7 +1981,7 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                   {
                    //it was found, get it
 				  auto lbTextLen = ::SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXTLEN, FindResult, 0);
-				  if (lbTextLen > bufferLen)
+				  if (static_cast<size_t>(lbTextLen) > bufferLen)
 					  return TRUE;
 					  SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXT, FindResult, reinterpret_cast<LPARAM>(buffer));
 				   switch (buffer[11])
@@ -1981,7 +2013,7 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                   {
                    //it was found, get it
 				  auto lbTextLen = ::SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXTLEN, FindResult, 0);
-				  if (lbTextLen > bufferLen)
+				  if (static_cast<size_t>(lbTextLen) > bufferLen)
 					  return TRUE;
 					  SendMessage(BGHS[SelfIndex].hlist1, LB_GETTEXT, FindResult, reinterpret_cast<LPARAM>(buffer));
 				   switch (buffer[10])
@@ -2087,6 +2119,46 @@ LRESULT CALLBACK GridProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			break;
 		case BGM_SETUNPROTECTCOLOR:
 			  BGHS[SelfIndex].unprotectcolor = (COLORREF)wParam;
+				  {
+				   RECT rect;
+				   GetClientRect(hWnd,&rect);
+				   InvalidateRect(hWnd,&rect,FALSE);
+				  }
+			break;
+		case BGM_SETTEXTCOLOR:
+			  BGHS[SelfIndex].textcolor = (COLORREF)wParam;
+				  {
+				   RECT rect;
+				   GetClientRect(hWnd,&rect);
+				   InvalidateRect(hWnd,&rect,FALSE);
+				  }
+			break;
+		case BGM_SETBACKGROUNDCOLOR:
+			  BGHS[SelfIndex].backgroundcolor = (COLORREF)wParam;
+				  {
+				   RECT rect;
+				   GetClientRect(hWnd,&rect);
+				   InvalidateRect(hWnd,&rect,FALSE);
+				  }
+			break;
+		case BGM_SETTITLETEXTCOLOR:
+			  BGHS[SelfIndex].titletextcolor = (COLORREF)wParam;
+				  {
+				   RECT rect;
+				   GetClientRect(hWnd,&rect);
+				   InvalidateRect(hWnd,&rect,FALSE);
+				  }
+			break;
+		case BGM_SETTITLECOLOR:
+			  BGHS[SelfIndex].titlecolor = (COLORREF)wParam;
+				  {
+				   RECT rect;
+				   GetClientRect(hWnd,&rect);
+				   InvalidateRect(hWnd,&rect,FALSE);
+				  }
+			break;
+		case BGM_SETTITLEGRIDLINECOLOR:
+			  BGHS[SelfIndex].titlegridlinecolor = (COLORREF)wParam;
 				  {
 				   RECT rect;
 				   GetClientRect(hWnd,&rect);
@@ -3197,7 +3269,7 @@ int BinarySearchListBox(HWND lbhWnd,TCHAR* searchtext)
 
      //is it the head?
 	 auto lbTextLen = ::SendMessage(lbhWnd, LB_GETTEXTLEN, head, 0);
-	 if (lbTextLen > bufLen)
+	 if (static_cast<size_t>(lbTextLen) > bufLen)
 		 return 0;
 
      SendMessage(lbhWnd, LB_GETTEXT, head, reinterpret_cast<LPARAM>(headtext));
@@ -3221,7 +3293,7 @@ int BinarySearchListBox(HWND lbhWnd,TCHAR* searchtext)
 
      //is it the tail?
 	 lbTextLen = ::SendMessage(lbhWnd, LB_GETTEXTLEN, tail, 0);
-	 if (lbTextLen > bufLen)
+	 if (static_cast<size_t>(lbTextLen) > bufLen)
 		 return 0;
 	 SendMessage(lbhWnd, LB_GETTEXT, tail, reinterpret_cast<LPARAM>(tailtext));
      tailtext[9] = 0x00;
@@ -3248,7 +3320,7 @@ int BinarySearchListBox(HWND lbhWnd,TCHAR* searchtext)
          {
                   finger = head + ((tail - head) / 2);
 				  lbTextLen = ::SendMessage(lbhWnd, LB_GETTEXTLEN, finger, 0);
-				  if (lbTextLen > bufLen)
+				  if (static_cast<size_t>(lbTextLen) > bufLen)
 					  return 0;
 				  SendMessage(lbhWnd, LB_GETTEXT, finger, reinterpret_cast<LPARAM>(tbuffer));
                  tbuffer[9] = 0x00;

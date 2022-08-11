@@ -26,14 +26,14 @@ using namespace std;
 void ListView::init(HINSTANCE hInst, HWND parent)
 {
 	Window::init(hInst, parent);
-    INITCOMMONCONTROLSEX icex;
+	INITCOMMONCONTROLSEX icex;
 
-    // Ensure that the common control DLL is loaded.
-    icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
-    icex.dwICC  = ICC_LISTVIEW_CLASSES;
-    InitCommonControlsEx(&icex);
+	// Ensure that the common control DLL is loaded.
+	icex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+	icex.dwICC  = ICC_LISTVIEW_CLASSES;
+	InitCommonControlsEx(&icex);
 
-    // Create the list-view window in report view with label editing enabled.
+	// Create the list-view window in report view with label editing enabled.
 	int listViewStyles = LVS_REPORT | LVS_NOSORTHEADER\
 						| LVS_SINGLESEL | LVS_AUTOARRANGE\
 						| LVS_SHAREIMAGELISTS | LVS_SHOWSELALWAYS;
@@ -58,7 +58,7 @@ void ListView::init(HINSTANCE hInst, HWND parent)
 	_defaultProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtr(_hSelf, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(staticProc)));
 
 	DWORD exStyle = ListView_GetExtendedListViewStyle(_hSelf);
-	exStyle |= LVS_EX_FULLROWSELECT | LVS_EX_BORDERSELECT | _extraStyle;
+	exStyle |= LVS_EX_FULLROWSELECT | LVS_EX_BORDERSELECT | LVS_EX_DOUBLEBUFFER | _extraStyle;
 	ListView_SetExtendedListViewStyle(_hSelf, exStyle);
 
 	if (_columnInfos.size())
@@ -71,7 +71,7 @@ void ListView::init(HINSTANCE hInst, HWND parent)
 		{
 			lvColumn.cx = static_cast<int>(it->_width);
 			lvColumn.pszText = const_cast<TCHAR *>(it->_label.c_str());
-			ListView_InsertColumn(_hSelf, ++i, &lvColumn);
+			ListView_InsertColumn(_hSelf, ++i, &lvColumn);  // index is not 0 based but 1 based
 		}
 	}
 }
@@ -117,7 +117,7 @@ size_t ListView::findAlphabeticalOrderPos(const generic_string& string2Cmp, Sort
 
 	for (size_t i = 0; i < nbItem; ++i)
 	{
-		TCHAR str[MAX_PATH];
+		TCHAR str[MAX_PATH] = { '\0' };
 		ListView_GetItemText(_hSelf, i, 0, str, sizeof(str));
 
 		int res = lstrcmp(string2Cmp.c_str(), str);
